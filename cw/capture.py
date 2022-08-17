@@ -392,11 +392,13 @@ def capture_aes_fvsr_key_batch(ot, ktp, capture_cfg, scope_type, gen_ciphertexts
     random.seed(capture_cfg["batch_prng_seed"])
     # Seed the target's PRNG
     ot.target.simpleserial_write("s", capture_cfg["batch_prng_seed"].to_bytes(4, "little"))
+    req_response = ot.target.simpleserial_read("w", 1, ack=False)
 
     key_fixed = bytearray([0x81, 0x1E, 0x37, 0x31, 0xB0, 0x12, 0x0A, 0x78,
                            0x42, 0x78, 0x1E, 0x22, 0xB2, 0x5C, 0xDD, 0xF9])
     tqdm.write(f'Fixed key: {binascii.b2a_hex(bytes(key_fixed))}')
     ot.target.simpleserial_write("t", key_fixed)
+    req_response = ot.target.simpleserial_read("w", 1, ack=False)
 
     sample_fixed = 1
     is_first_batch = True
@@ -420,6 +422,7 @@ def capture_aes_fvsr_key_batch(ot, ktp, capture_cfg, scope_type, gen_ciphertexts
             # when this script is getting waves from the scope.
             if is_first_batch:
                 ot.target.simpleserial_write("g", scope.num_segments_actual.to_bytes(4, "little"))
+                req_response = ot.target.simpleserial_read("w", 1, ack=False)
                 is_first_batch = False
             ot.target.simpleserial_write("f", scope.num_segments_actual.to_bytes(4, "little"))
 

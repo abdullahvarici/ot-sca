@@ -1,6 +1,6 @@
 device:
   fpga_bitstream: objs/lowrisc_systems_chip_earlgrey_cw310_0.1.bit
-  fw_bin: objs/aes_serial_fpga_cw310.bin
+  fw_bin: objs/aes_serial_fpga_cw310_gen.bin
   pll_frequency: 100000000
   baudrate: 115200
 capture:
