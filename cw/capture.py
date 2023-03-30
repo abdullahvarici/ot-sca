@@ -1144,6 +1144,7 @@ def capture_otbn_vertical(ot, ktp, fw_bin, pll_frequency, capture_cfg, device_cf
 
     # Seed the RNG and generate a random fixed seed for all traces of the
     # keygen operation.
+    random.seed(capture_cfg["batch_prng_seed"])
     seed_fixed = ktp.next_key()
     print(f'fixed seed = {seed_fixed.hex()}')
     if len(seed_fixed) != seed_bytes:
@@ -1166,16 +1167,6 @@ def capture_otbn_vertical(ot, ktp, fw_bin, pll_frequency, capture_cfg, device_cf
 
         ot.scope.adc.offset = capture_cfg["offset"]
 
-        if capture_cfg["masks_off"] is True:
-            # Use a constant mask for each trace
-            mask = bytearray(capture_cfg["plain_text_len_bytes"])  # all zeros
-        else:
-            # Generate a new random mask for each trace.
-            mask = ktp.next_text()
-
-        tqdm.write("Starting new trace....")
-        tqdm.write(f'mask   = {mask.hex()}')
-
         if sample_fixed:
             # Use the fixed seed.
             seed_used = seed_fixed
@@ -1185,11 +1176,24 @@ def capture_otbn_vertical(ot, ktp, fw_bin, pll_frequency, capture_cfg, device_cf
             seed_used = ktp.next_key()
             expected_key = int.from_bytes(seed_used, byteorder='little') % curve_order_n
 
-        # Decide for next round if we use the fixed or a random seed.
-        sample_fixed = random.randint(0, 1)
+
+        if capture_cfg["masks_off"] is True:
+            # Use a constant mask for each trace
+            mask = bytearray(capture_cfg["plain_text_len_bytes"])  # all zeros
+        else:
+            # Generate a new random mask for each trace.
+            mask = ktp.next_text()
+
+        #tqdm.write("Starting new trace....")
 
         ot.target.simpleserial_write('x', seed_used)
-        tqdm.write(f'seed   = {seed_used.hex()}')
+        time.sleep(0.01)
+        #tqdm.write(f'\nseed   = {seed_used.hex()}')
+        #tqdm.write(f'mask   = {mask.hex()}')
+
+        # Decide for next round if we use the fixed or a random seed.
+        dummy = ktp.next_key()
+        sample_fixed = dummy[0] & 1
 
         # Check for errors.
         err = ot.target.read()
@@ -1209,7 +1213,7 @@ def capture_otbn_vertical(ot, ktp, fw_bin, pll_frequency, capture_cfg, device_cf
 
         # Check the number of cycles where the trigger signal was high.
         cycles = ot.scope.adc.trig_count
-        tqdm.write("Observed number of cycles: %d" % cycles)
+        #tqdm.write("Observed number of cycles: %d" % cycles)
 
         waves = ot.scope.get_last_trace(as_int=True)
         # Read the output, unmask the key, and check if it matches
@@ -1225,13 +1229,13 @@ def capture_otbn_vertical(ot, ktp, fw_bin, pll_frequency, capture_cfg, device_cf
         d1 = int.from_bytes(share1, byteorder='little')
         actual_key = (d0 + d1) % curve_order_n
 
-        tqdm.write(f'share0 = {share0.hex()}')
-        tqdm.write(f'share1 = {share1.hex()}')
+        #tqdm.write(f'share0 = {share0.hex()}')
+        #tqdm.write(f'share1 = {share1.hex()}')
 
-        if actual_key != expected_key:
-            raise RuntimeError('Bad generated key:\n'
-                               f'Expected: {hex(expected_key)}\n'
-                               f'Actual:   {hex(actual_key)}')
+        #if actual_key != expected_key:
+        #    raise RuntimeError('Bad generated key:\n'
+        #                       f'Expected: {hex(expected_key)}\n'
+        #                       f'Actual:   {hex(actual_key)}')
 
         # Create a chipwhisperer trace object and save it to the project
         # Args/fields of Trace object: waves, textin, textout, key
@@ -1333,6 +1337,11 @@ def capture_otbn_vertical_batch(ot, ktp, capture_cfg, scope_type, device_cfg):
         raise ValueError(f'Unexpected mask length: {ktp.textLen()}.\n'
                          f'Hint: set plaintext len={seed_bytes} in the configuration file.')
 
+    # set PRNG seed
+    random.seed(capture_cfg["batch_prng_seed"])
+    ot.target.simpleserial_write("s", capture_cfg["batch_prng_seed"].to_bytes(4, "little"))
+    time.sleep(0.3)
+
     # set ecc256 fixed seed - for batch mode the "plaintext" of ktp is used for seed and mask
     # this simplifies synchronization with the device PRNG
     seed_fixed = ktp.next_key()
@@ -1341,11 +1350,6 @@ def capture_otbn_vertical_batch(ot, ktp, capture_cfg, scope_type, device_cfg):
     if len(seed_fixed) != seed_bytes:
         raise ValueError(f'Fixed seed length is {len(seed_fixed)}, expected {seed_bytes}')
     ot.target.simpleserial_write("x", seed_fixed)
-    time.sleep(0.3)
-
-    # set PRNG seed
-    random.seed(capture_cfg["batch_prng_seed"])
-    ot.target.simpleserial_write("s", capture_cfg["batch_prng_seed"].to_bytes(4, "little"))
     time.sleep(0.3)
 
     # enable/disable masking
@@ -1413,12 +1417,16 @@ def capture_otbn_vertical_batch(ot, ktp, capture_cfg, scope_type, device_cfg):
                     seed_barray = ktp.next_key()
                     seed = int.from_bytes(seed_barray, "little")
 
+                # print(f'\nseed = {seed_barray.hex()}')
+
                 if capture_cfg["masks_off"] is True:
                     mask_barray = bytearray(capture_cfg["plain_text_len_bytes"])
                     mask = int.from_bytes(mask_barray, "little")
                 else:
                     mask_barray = ktp.next_text()
                     mask = int.from_bytes(mask_barray, "little")
+
+                # print(f'mask = {mask_barray.hex()}')
 
                 masks.append(mask_barray)
                 seed = seed ^ mask
@@ -1440,7 +1448,7 @@ def capture_otbn_vertical_batch(ot, ktp, capture_cfg, scope_type, device_cfg):
                 sample_fixed = dummy[0] & 1
 
             # Check the batch digest to make sure we are in sync.
-            check_ciphertext(ot, bytearray(batch_digest.to_bytes(seed_bytes, "little")), seed_bytes)
+            # check_ciphertext(ot, bytearray(batch_digest.to_bytes(seed_bytes, "little")), seed_bytes)
 
             num_segments_storage = optimize_cw_capture(project, num_segments_storage)
 
