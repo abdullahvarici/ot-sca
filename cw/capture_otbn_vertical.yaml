@@ -25,7 +25,7 @@ capture:
   # scope gain in db
   scope_gain: 24
   num_traces: 1000
-  batch_prng_seed: 6
+  batch_prng_seed: 26
   project_name: projects/opentitan_otbn_vertical_keygen
   waverunner_ip: 192.168.1.228
   # As OTBN operations are long, we may need to overwrite the following

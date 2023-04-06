@@ -1456,7 +1456,7 @@ def capture_otbn_vertical_batch(ot, ktp, capture_cfg, scope_type, device_cfg):
             # Args/fields of Trace object: waves, textin, textout, key
             for wave, seed, mask, d0, d1 in zip(waves, seeds, masks, d0s, d1s):
                 d = d0 + d1
-                trace = cw.common.traces.Trace(wave, d, mask, seed)
+                trace = cw.common.traces.Trace(wave, mask, d, seed)
                 project.traces.append(
                     trace,
                     dtype=np.uint16
