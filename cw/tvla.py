@@ -594,10 +594,18 @@ def run_tvla(ctx: typer.Context):
                     # For now, don't perform any filtering when doing general fixed-vs-random TVLA.
                     traces_to_use = np.zeros(len(project.waves), dtype=bool)
                     traces_to_use[trace_start:trace_end + 1] = True
+                    keys_nparrays = []
+                    for i in range(num_traces_max):
+                        keys_nparrays.append(np.frombuffer(project.keys[i], dtype=np.uint8))
+                    fixed_key = keys_nparrays[0]
+                    for i in range(trace_start, trace_end+1):
+                        traces_to_use[i] = not np.array_equal(fixed_key, keys_nparrays[i])
 
                     if i_step == 0:
                         # Keep a single trace to create the figures.
                         single_trace = traces[1]
+
+                    traces = traces[traces_to_use[trace_start:trace_end + 1]]
 
                 if save_to_disk_trace:
                     log.info("Saving Traces")
@@ -707,8 +715,16 @@ def run_tvla(ctx: typer.Context):
                 # We do general fixed-vs-random TVLA. The "leakage" is indicating whether a trace
                 # belongs to the fixed (1) or random (0) group.
                 leakage = np.zeros((num_traces), dtype=np.uint8)
+                KEY_BIT = cfg["bit_select"]
+                BIT_IN_BYTE = KEY_BIT % 8
+                KEY_BYTE = KEY_BIT // 8
+                # print(KEY_BYTE)
+                # print(BIT_IN_BYTE)
+                log.info("Computing bit-specific leakage for key bit = %d", KEY_BIT)
+                print("\nComputing bit-specific leakage for key bit =", KEY_BIT)
                 for i in range(num_traces):
-                    leakage[i] = np.array_equal(fixed_key, keys[i])
+                    #leakage[i] = np.array_equal(fixed_key, keys[i])
+                    leakage[i] = (keys[i][KEY_BYTE] >> BIT_IN_BYTE) % 2
 
             # Uncomment the function call below for debugging e.g. when the t-test results aren't
             # centered around 0.
@@ -835,10 +851,13 @@ def run_tvla(ctx: typer.Context):
 
     if not np.any(failure):
         log.info("No leakage above threshold identified.")
+        print("No leakage above threshold identified.")
     if np.any(failure) or np.any(nan):
         if general_test is False:
             if np.any(failure):
                 log.info("Leakage above threshold identified in the following order(s), round(s) "
+                         "and byte(s) marked with X:")
+                print("Leakage above threshold identified in the following order(s), round(s) "
                          "and byte(s) marked with X:")
             if np.any(nan):
                 log.info("Couldn't compute statistics for order(s), round(s) and byte(s) marked "
@@ -867,6 +886,7 @@ def run_tvla(ctx: typer.Context):
                     log.info("")
         else:
             log.info("Leakage above threshold identified in the following order(s) marked with X")
+            print("Leakage above threshold identified in the following order(s) marked with X")
             if np.any(nan):
                 log.info("Couldn't compute statistics for order(s) marked with O:")
             with UnformattedLog():
@@ -879,6 +899,7 @@ def run_tvla(ctx: typer.Context):
                     else:
                         result_str += " "
                     log.info(f"{result_str}")
+                    print(f"{result_str}")
                 log.info("")
 
     if cfg["plot_figures"]:
@@ -1039,7 +1060,7 @@ def run_tvla(ctx: typer.Context):
                 plt.subplots_adjust(right=0.84)
             plt.xlabel("time [samples]")
             plt.savefig('tmp/figures/' + cfg["mode"] + '_fixed_vs_random.png')
-            plt.show()
+            # plt.show()
 
         # Plotting figures for t-test statistics vs. number of traces used.
         # For now, do a single figure per round and per order. Every line corresponds to the t-test
@@ -1153,6 +1174,7 @@ default_plot_figures = False
 default_general_test = True
 default_mode = "aes"
 default_update_cfg_file = False
+default_bit_select = 0
 
 
 # Help messages of the options
@@ -1201,6 +1223,8 @@ help_mode = inspect.cleandoc("""Select mode: can be either "aes", "kmac", "sha3"
     Default: """ + str(default_mode))
 help_update_cfg_file = inspect.cleandoc("""Update existing configuration file or create if there
     isn't any configuration file. Default: """ + str(default_update_cfg_file))
+help_bit_select = inspect.cleandoc("""Bit number for specific TVLA. Default:
+    """ + str(default_bit_select))
 
 
 @app.callback()
@@ -1221,7 +1245,8 @@ def main(ctx: typer.Context,
          plot_figures: bool = typer.Option(None, help=help_plot_figures),
          general_test: bool = typer.Option(None, help=help_general_test),
          mode: str = typer.Option(None, help=help_mode),
-         update_cfg_file: bool = typer.Option(None, help=help_update_cfg_file)):
+         update_cfg_file: bool = typer.Option(None, help=help_update_cfg_file),
+         bit_select: int = typer.Option(None, help=help_bit_select)):
     """A histogram-based TVLA described in "Fast Leakage Assessment" by O. Reparaz, B. Gierlichs and
     I. Verbauwhede (https://eprint.iacr.org/2017/624.pdf)."""
 
@@ -1230,7 +1255,7 @@ def main(ctx: typer.Context,
     # Assign default values to the options.
     for v in ['project_file', 'trace_file', 'trace_start', 'trace_end', 'leakage_file',
               'save_to_disk', 'round_select', 'byte_select', 'input_file', 'output_file',
-              'number_of_steps', 'ttest_step_file', 'plot_figures', 'general_test', 'mode']:
+              'number_of_steps', 'ttest_step_file', 'plot_figures', 'general_test', 'mode', 'bit_select']:
         run_cmd = f'''cfg[v] = default_{v}'''
         exec(run_cmd)
 
@@ -1243,7 +1268,7 @@ def main(ctx: typer.Context,
     # Overwrite options from CLI, if provided.
     for v in ['project_file', 'trace_file', 'trace_start', 'trace_end', 'leakage_file',
               'save_to_disk', 'round_select', 'byte_select', 'input_file', 'output_file',
-              'number_of_steps', 'ttest_step_file', 'plot_figures', 'general_test', 'mode']:
+              'number_of_steps', 'ttest_step_file', 'plot_figures', 'general_test', 'mode', 'bit_select']:
         run_cmd = f'''if {v} is not None: cfg[v] = {v}'''
         exec(run_cmd)
 
